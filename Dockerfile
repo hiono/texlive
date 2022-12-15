@@ -1,15 +1,41 @@
-FROM ubuntu:16.04
+FROM alpine:latest AS installer
 MAINTAINER onohr <bps@sculd.com>
+ENV PATH /usr/local/bin/texlive:$PATH
+ARG TEXMFLOCAL=/usr/local/texlive/texmf-local/tex/latex
+WORKDIR /install-tl-unx
+RUN apk add --no-cache fontconfig perl tar wget xz
+COPY ./texlive.profile ./
+RUN wget -nv https://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz
+RUN tar -xzf ./install-tl-unx.tar.gz --strip-components=1
+RUN ./install-tl --profile=texlive.profile
+RUN ln -sf /usr/local/texlive/*/bin/* /usr/local/bin/texlive
+RUN tlmgr install \
+  collection-fontsrecommended \
+  collection-langjapanese \
+  collection-latexextra \
+  latexmk
+# for additional modules
+## pseudo code modules
+RUN wget http://captain.kanpaku.jp/LaTeX/jlisting.zip \
+    && unzip jlisting.zip \
+    && mkdir -p ${TEXMFLOCAL}/listings \
+    && cp jlisting/jlisting.sty ${TEXMFLOCAL}/listings
+RUN wget http://mirrors.ctan.org/macros/latex/contrib/algorithms.zip \
+    && unzip algorithms.zip \
+    && cd algorithms \
+    && latex algorithms.ins \
+    && mkdir -p ${TEXMFLOCAL}/algorithms \
+    && cp *.sty ${TEXMFLOCAL}/algorithms
+RUN wget http://mirrors.ctan.org/macros/latex/contrib/algorithmicx.zip \
+    && unzip algorithmicx.zip \
+    && mkdir -p ${TEXMFLOCAL}/algorithmicx \
+    && cp algorithmicx/*.sty ${TEXMFLOCAL}/algorithmicx
 
-ENV PKG="${PKG} wget tar unzip perl"
-ENV PKG="${PKG} fontconfig fonts-takao-pgothic fonts-takao-gothic fonts-takao-mincho"
-RUN apt-get -qq update && echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections && ( apt-get -qq --force-yes -y --no-install-recommends install language-pack-ja ||  apt-get -qq --force-yes -y --no-install-recommends install language-pack-ja=1:14.04+20140410 ) && dpkg-reconfigure -f noninteractive locales && if [ "${PKG}" ];then apt-get -o Acquire::http::Dl-Limit=300 --force-yes -y --no-install-recommends upgrade && apt-get -o Acquire::http::Dl-Limit=300 --force-yes -y --no-install-recommends install ${PKG};fi && apt-get --force-yes -y --no-install-recommends install && apt-get autoremove && apt-get autoclean && apt-get clean && rm -rf "/var/cache/apt/archives/*" "/var/lib/apt/lists/*" && echo 'debconf debconf/frontend select Dialog' | debconf-set-selections
-ENV TERM=xterm LANGUAGE=ja_JP:ja LANG=ja_JP.UTF-8 LC_TIME=POSIX
-RUN /bin/cp -f /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
-
-RUN mkdir -p install-tl && wget -nv -O install-tl.tar.gz http://mirror.ctan.org/systems/texlive/tlnet/install-tl-unx.tar.gz && tar -xzf install-tl.tar.gz -C install-tl --strip-components=1
-ADD texlive2016.profile install-tl/
-RUN ( cd install-tl/ && ./install-tl --persistent-downloads --profile texlive2016.profile || ( ./install-tl --persistent-downloads --profile texlive2016.profile || ./install-tl --persistent-downloads --profile texlive2016.profile )) && rm install-tl.tar.gz && rm -r install-tl
-RUN cp $(kpsewhich -var-value TEXMFSYSVAR)/fonts/conf/texlive-fontconfig.conf /etc/fonts/conf.d/09-texlive.conf
-RUN fc-cache -fsv
-CMD /bin/bash
+FROM alpine:latest
+MAINTAINER onohr <bps@sculd.com>
+ENV PATH /usr/local/bin/texlive:$PATH
+WORKDIR /workdir
+COPY --from=installer /usr/local/texlive /usr/local/texlive
+RUN apk add --no-cache bash fontconfig perl
+RUN ln -sf /usr/local/texlive/*/bin/* /usr/local/bin/texlive
+CMD ["bash"]
